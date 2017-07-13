@@ -344,12 +344,40 @@ reset:
     printf( "  . Waiting for a remote connection ..." );
     fflush( stdout );
 
-    if( ( ret = mbedtls_net_accept( &listen_fd, &neigh.client_fd,
-                    client_ip, sizeof( client_ip ), &cliip_len ) ) != 0 )
-    {
-        printf( " failed\n  ! mbedtls_net_accept returned %d\n\n", ret );
-        goto exit;
-    }
+    /* UDP: wait for a message, but keep it in the queue */
+    struct sockaddr_in6 client_addr;
+    socklen_t n = sizeof(client_addr);
+    char b;
+    ret = (int) recvfrom( listen_fd.fd, &b, sizeof( b ), MSG_PEEK,
+			  (struct sockaddr *) &client_addr, &n );
+				    
+    struct sockaddr_storage local_addr;
+    int one = 1;
+
+    if( connect( listen_fd.fd, (struct sockaddr *) &client_addr, n ) != 0 )
+      return( MBEDTLS_ERR_NET_ACCEPT_FAILED );
+
+    neigh.client_fd.fd = listen_fd.fd;
+    listen_fd.fd   = -1; /* In case we exit early */
+
+    n = sizeof( struct sockaddr_storage );
+    if( getsockname( neigh.client_fd.fd,
+		     (struct sockaddr *) &local_addr, &n ) != 0 ||
+	( listen_fd.fd = (int) socket( local_addr.ss_family,
+				       SOCK_DGRAM, IPPROTO_UDP ) ) < 0 ||
+	setsockopt( listen_fd.fd, SOL_SOCKET, SO_REUSEADDR,
+		    (const char *) &one, sizeof( one ) ) != 0 )
+      {
+	return( MBEDTLS_ERR_NET_SOCKET_FAILED );
+      }
+
+    if( bind( listen_fd.fd, (struct sockaddr *) &local_addr, n ) != 0 )
+      {
+	return( MBEDTLS_ERR_NET_BIND_FAILED );
+      }
+
+    cliip_len = sizeof(client_addr.sin6_addr.s6_addr);
+    memcpy( client_ip, &client_addr.sin6_addr.s6_addr, cliip_len); 
 
     /* For HelloVerifyRequest cookies */
     if( ( ret = mbedtls_ssl_set_client_transport_id( &neigh.ssl,
