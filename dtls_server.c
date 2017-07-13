@@ -1,32 +1,11 @@
-/*
- *  Simple DTLS server demonstration program
- *
- *  Copyright (C) 2006-2015, ARM Limited, All Rights Reserved
- *  SPDX-License-Identifier: Apache-2.0
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may
- *  not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *  http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
- *  WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- *
- *  This file is part of mbed TLS (https://tls.mbed.org)
- */
-
 #if !defined(MBEDTLS_CONFIG_FILE)
-#include "mbedtls/config.h"
+#include <mbedtls/config.h>
 #else
 #include MBEDTLS_CONFIG_FILE
 #endif
 
 #if defined(MBEDTLS_PLATFORM_C)
-#include "mbedtls/platform.h"
+#include <mbedtls/platform.h>
 #else
 #include <stdio.h>
 #define mbedtls_printf     printf
@@ -40,43 +19,35 @@
     !defined(MBEDTLS_X509_CRT_PARSE_C) || !defined(MBEDTLS_RSA_C) ||      \
     !defined(MBEDTLS_CERTS_C) || !defined(MBEDTLS_PEM_PARSE_C) ||         \
     !defined(MBEDTLS_TIMING_C)
-
-int main( void )
-{
-    printf( "MBEDTLS_SSL_SRV_C and/or MBEDTLS_SSL_PROTO_DTLS and/or "
-            "MBEDTLS_SSL_COOKIE_C and/or MBEDTLS_NET_C and/or "
-            "MBEDTLS_ENTROPY_C and/or MBEDTLS_CTR_DRBG_C and/or "
-            "MBEDTLS_X509_CRT_PARSE_C and/or MBEDTLS_RSA_C and/or "
-            "MBEDTLS_CERTS_C and/or MBEDTLS_PEM_PARSE_C and/or "
-            "MBEDTLS_TIMING_C not defined.\n" );
-    return( 0 );
-}
+#error "mbedTLS headers not available"
 #else
-
-#if defined(_WIN32)
-#include <windows.h>
-#endif
 
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <netinet/in.h>
 
-#include "mbedtls/entropy.h"
-#include "mbedtls/ctr_drbg.h"
-#include "mbedtls/certs.h"
-#include "mbedtls/x509.h"
-#include "mbedtls/ssl.h"
-#include "mbedtls/ssl_cookie.h"
-#include "mbedtls/net_sockets.h"
-#include "mbedtls/error.h"
-#include "mbedtls/debug.h"
-#include "mbedtls/timing.h"
+#include <mbedtls/entropy.h>
+#include <mbedtls/ctr_drbg.h>
+#include <mbedtls/certs.h>
+#include <mbedtls/x509.h>
+#include <mbedtls/ssl.h>
+#include <mbedtls/ssl_cookie.h>
+#include <mbedtls/net_sockets.h>
+#include <mbedtls/error.h>
+#include <mbedtls/debug.h>
+#include <mbedtls/timing.h>
 
 #if defined(MBEDTLS_SSL_CACHE_C)
-#include "mbedtls/ssl_cache.h"
+#include <mbedtls/ssl_cache.h>
 #endif
 
-#define READ_TIMEOUT_MS 10000   /* 5 seconds */
+#define SERVER_PORT "5000"
+#define SERVER_ADDR "::1" 
+
+#define READ_TIMEOUT_MS 10000
 #define DEBUG_LEVEL 0
 
 static void my_debug( void *ctx, int level,
@@ -125,39 +96,47 @@ net_send(void *ctx, const unsigned char *buf, size_t len)
 }
 
 
+struct babel_dtls {
+  mbedtls_net_context listen_fd;
+  mbedtls_ssl_cookie_ctx cookie_ctx;
+
+  mbedtls_entropy_context entropy;
+  mbedtls_ctr_drbg_context ctr_drbg;
+
+  mbedtls_ssl_config conf;
+  mbedtls_x509_crt srvcert;
+  mbedtls_pk_context pkey;
+  mbedtls_timing_delay_context timer;
+#if defined(MBEDTLS_SSL_CACHE_C)
+  mbedtls_ssl_cache_context cache;
+#endif
+};
+
+
 int main( void )
 {
     int ret, len;
-    mbedtls_net_context listen_fd, client_fd;
+    mbedtls_net_context client_fd;
     unsigned char buf[1024];
     const char *pers = "dtls_server";
     unsigned char client_ip[16] = { 0 };
     size_t cliip_len;
-    mbedtls_ssl_cookie_ctx cookie_ctx;
-
-    mbedtls_entropy_context entropy;
-    mbedtls_ctr_drbg_context ctr_drbg;
     mbedtls_ssl_context ssl;
-    mbedtls_ssl_config conf;
-    mbedtls_x509_crt srvcert;
-    mbedtls_pk_context pkey;
-    mbedtls_timing_delay_context timer;
-#if defined(MBEDTLS_SSL_CACHE_C)
-    mbedtls_ssl_cache_context cache;
-#endif
 
-    mbedtls_net_init( &listen_fd );
+    struct babel_dtls dtls;
+    
+    mbedtls_net_init( &dtls.listen_fd );
     mbedtls_net_init( &client_fd );
     mbedtls_ssl_init( &ssl );
-    mbedtls_ssl_config_init( &conf );
-    mbedtls_ssl_cookie_init( &cookie_ctx );
+    mbedtls_ssl_config_init( &dtls.conf );
+    mbedtls_ssl_cookie_init( &dtls.cookie_ctx );
 #if defined(MBEDTLS_SSL_CACHE_C)
-    mbedtls_ssl_cache_init( &cache );
+    mbedtls_ssl_cache_init( &dtls.cache );
 #endif
-    mbedtls_x509_crt_init( &srvcert );
-    mbedtls_pk_init( &pkey );
-    mbedtls_entropy_init( &entropy );
-    mbedtls_ctr_drbg_init( &ctr_drbg );
+    mbedtls_x509_crt_init( &dtls.srvcert );
+    mbedtls_pk_init( &dtls.pkey );
+    mbedtls_entropy_init( &dtls.entropy );
+    mbedtls_ctr_drbg_init( &dtls.ctr_drbg );
 
 #if defined(MBEDTLS_DEBUG_C)
     mbedtls_debug_set_threshold( DEBUG_LEVEL );
@@ -174,7 +153,7 @@ int main( void )
      * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
      * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
      */
-    ret = mbedtls_x509_crt_parse( &srvcert, (const unsigned char *) mbedtls_test_srv_crt,
+    ret = mbedtls_x509_crt_parse( &dtls.srvcert, (const unsigned char *) mbedtls_test_srv_crt,
                           mbedtls_test_srv_crt_len );
     if( ret != 0 )
     {
@@ -182,7 +161,7 @@ int main( void )
         goto exit;
     }
 
-    ret = mbedtls_x509_crt_parse( &srvcert, (const unsigned char *) mbedtls_test_cas_pem,
+    ret = mbedtls_x509_crt_parse( &dtls.srvcert, (const unsigned char *) mbedtls_test_cas_pem,
                           mbedtls_test_cas_pem_len );
     if( ret != 0 )
     {
@@ -190,7 +169,7 @@ int main( void )
         goto exit;
     }
 
-    ret =  mbedtls_pk_parse_key( &pkey, (const unsigned char *) mbedtls_test_srv_key,
+    ret =  mbedtls_pk_parse_key( &dtls.pkey, (const unsigned char *) mbedtls_test_srv_key,
                          mbedtls_test_srv_key_len, NULL, 0 );
     if( ret != 0 )
     {
@@ -203,10 +182,10 @@ int main( void )
     /*
      * 2. Setup the "listening" UDP socket
      */
-    printf( "  . Bind on udp/*/4433 ..." );
+    printf( "  . Bind on udp/*/5000 ..." );
     fflush( stdout );
 
-    if( ( ret = mbedtls_net_bind( &listen_fd, NULL, "4433", MBEDTLS_NET_PROTO_UDP ) ) != 0 )
+    if( ( ret = mbedtls_net_bind( &dtls.listen_fd, SERVER_ADDR, SERVER_PORT, MBEDTLS_NET_PROTO_UDP ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_net_bind returned %d\n\n", ret );
         goto exit;
@@ -220,7 +199,7 @@ int main( void )
     printf( "  . Seeding the random number generator..." );
     fflush( stdout );
 
-    if( ( ret = mbedtls_ctr_drbg_seed( &ctr_drbg, mbedtls_entropy_func, &entropy,
+    if( ( ret = mbedtls_ctr_drbg_seed( &dtls.ctr_drbg, mbedtls_entropy_func, &dtls.entropy,
                                (const unsigned char *) pers,
                                strlen( pers ) ) ) != 0 )
     {
@@ -236,7 +215,7 @@ int main( void )
     printf( "  . Setting up the DTLS data..." );
     fflush( stdout );
 
-    if( ( ret = mbedtls_ssl_config_defaults( &conf,
+    if( ( ret = mbedtls_ssl_config_defaults( &dtls.conf,
                     MBEDTLS_SSL_IS_SERVER,
                     MBEDTLS_SSL_TRANSPORT_DATAGRAM,
                     MBEDTLS_SSL_PRESET_DEFAULT ) ) != 0 )
@@ -245,39 +224,39 @@ int main( void )
         goto exit;
     }
 
-    mbedtls_ssl_conf_rng( &conf, mbedtls_ctr_drbg_random, &ctr_drbg );
-    mbedtls_ssl_conf_dbg( &conf, my_debug, stdout );
+    mbedtls_ssl_conf_rng( &dtls.conf, mbedtls_ctr_drbg_random, &dtls.ctr_drbg );
+    mbedtls_ssl_conf_dbg( &dtls.conf, my_debug, stdout );
 
 #if defined(MBEDTLS_SSL_CACHE_C)
-    mbedtls_ssl_conf_session_cache( &conf, &cache,
+    mbedtls_ssl_conf_session_cache( &dtls.conf, &dtls.cache,
                                    mbedtls_ssl_cache_get,
                                    mbedtls_ssl_cache_set );
 #endif
 
-    mbedtls_ssl_conf_ca_chain( &conf, srvcert.next, NULL );
-   if( ( ret = mbedtls_ssl_conf_own_cert( &conf, &srvcert, &pkey ) ) != 0 )
+    mbedtls_ssl_conf_ca_chain( &dtls.conf, dtls.srvcert.next, NULL );
+    if( ( ret = mbedtls_ssl_conf_own_cert( &dtls.conf, &dtls.srvcert, &dtls.pkey ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ssl_conf_own_cert returned %d\n\n", ret );
         goto exit;
     }
 
-    if( ( ret = mbedtls_ssl_cookie_setup( &cookie_ctx,
-                                  mbedtls_ctr_drbg_random, &ctr_drbg ) ) != 0 )
+    if( ( ret = mbedtls_ssl_cookie_setup( &dtls.cookie_ctx,
+					  mbedtls_ctr_drbg_random, &dtls.ctr_drbg ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ssl_cookie_setup returned %d\n\n", ret );
         goto exit;
     }
 
-    mbedtls_ssl_conf_dtls_cookies( &conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
-                               &cookie_ctx );
+    mbedtls_ssl_conf_dtls_cookies( &dtls.conf, mbedtls_ssl_cookie_write, mbedtls_ssl_cookie_check,
+				   &dtls.cookie_ctx );
 
-    if( ( ret = mbedtls_ssl_setup( &ssl, &conf ) ) != 0 )
+    if( ( ret = mbedtls_ssl_setup( &ssl, &dtls.conf ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_ssl_setup returned %d\n\n", ret );
         goto exit;
     }
 
-    mbedtls_ssl_set_timer_cb( &ssl, &timer, mbedtls_timing_set_delay,
+    mbedtls_ssl_set_timer_cb( &ssl, &dtls.timer, mbedtls_timing_set_delay,
                                             mbedtls_timing_get_delay );
 
     printf( " ok\n" );
@@ -302,7 +281,7 @@ reset:
     printf( "  . Waiting for a remote connection ..." );
     fflush( stdout );
 
-    if( ( ret = mbedtls_net_accept( &listen_fd, &client_fd,
+    if( ( ret = mbedtls_net_accept( &dtls.listen_fd, &client_fd,
                     client_ip, sizeof( client_ip ), &cliip_len ) ) != 0 )
     {
         printf( " failed\n  ! mbedtls_net_accept returned %d\n\n", ret );
@@ -434,23 +413,19 @@ exit:
 #endif
 
     mbedtls_net_free( &client_fd );
-    mbedtls_net_free( &listen_fd );
+    mbedtls_net_free( &dtls.listen_fd );
 
-    mbedtls_x509_crt_free( &srvcert );
-    mbedtls_pk_free( &pkey );
+    mbedtls_x509_crt_free( &dtls.srvcert );
+    mbedtls_pk_free( &dtls.pkey );
     mbedtls_ssl_free( &ssl );
-    mbedtls_ssl_config_free( &conf );
-    mbedtls_ssl_cookie_free( &cookie_ctx );
+    mbedtls_ssl_config_free( &dtls.conf );
+    mbedtls_ssl_cookie_free( &dtls.cookie_ctx );
 #if defined(MBEDTLS_SSL_CACHE_C)
-    mbedtls_ssl_cache_free( &cache );
+    mbedtls_ssl_cache_free( &dtls.cache );
 #endif
-    mbedtls_ctr_drbg_free( &ctr_drbg );
-    mbedtls_entropy_free( &entropy );
+    mbedtls_ctr_drbg_free( &dtls.ctr_drbg );
+    mbedtls_entropy_free( &dtls.entropy );
 
-#if defined(_WIN32)
-    printf( "  Press Enter to exit this program.\n" );
-    fflush( stdout ); getchar();
-#endif
 
     /* Shell can not handle large exit numbers -> 1 for errors */
     if( ret < 0 )
