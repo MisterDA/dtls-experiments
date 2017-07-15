@@ -135,17 +135,9 @@ babel_dtls_setup(struct babel_dtls *dtls)
   int ret;
   const char *pers = "dtls_server";
 
-  /*
-   * 1. Load the certificates and private RSA key
-   */
   printf( "\n  . Loading the server cert. and key..." );
   fflush( stdout );
 
-  /*
-   * This demonstration program uses embedded test certificates.
-   * Instead, you may want to use mbedtls_x509_crt_parse_file() to read the
-   * server and CA certificates, as well as mbedtls_pk_parse_keyfile().
-   */
   ret = mbedtls_x509_crt_parse( &dtls->srvcert, (const unsigned char *) mbedtls_test_srv_crt,
 				mbedtls_test_srv_crt_len );
   if( ret != 0 )
@@ -172,10 +164,6 @@ babel_dtls_setup(struct babel_dtls *dtls)
 
   printf( " ok\n" );
 
-
-  /*
-   * 3. Seed the RNG
-   */
   printf( "  . Seeding the random number generator..." );
   fflush( stdout );
 
@@ -189,9 +177,6 @@ babel_dtls_setup(struct babel_dtls *dtls)
 
   printf( " ok\n" );
 
-  /*
-   * 4. Setup stuff
-   */
   printf( "  . Setting up the DTLS data..." );
   fflush( stdout );
 
@@ -301,15 +286,8 @@ int main( void )
     neighbour_setup(&neigh, &dtls);
 
     mbedtls_net_init( &listen_fd );
-    
-    /*
-    ret = mbedtls_net_set_nonblock(&dtls->listen_fd);
-    if (ret)
-      {
-        printf(" failed\n  ! mbedtls_net_set_nonblock %d\n\n", ret);
-        goto exit;
-      }
-    */ 
+
+
     printf( "  . Bind on udp/*/5000 ..." );
     fflush( stdout );
 
@@ -321,6 +299,14 @@ int main( void )
 
     printf( " ok\n" );
 
+    /*
+    ret = mbedtls_net_set_nonblock(&listen_fd);
+    if (ret)
+      {
+        printf(" failed\n  ! mbedtls_net_set_nonblock %d\n\n", ret);
+        goto exit;
+      }
+    */
 
 #if 1
 
@@ -338,9 +324,6 @@ reset:
 
     mbedtls_ssl_session_reset( &neigh.ssl );
 
-    /*
-     * 3. Wait until a client connects
-     */
     printf( "  . Waiting for a remote connection ..." );
     fflush( stdout );
 
@@ -350,7 +333,7 @@ reset:
     char b;
     ret = (int) recvfrom( listen_fd.fd, &b, sizeof( b ), MSG_PEEK,
 			  (struct sockaddr *) &client_addr, &n );
-				    
+
     struct sockaddr_storage local_addr;
     int one = 1;
 
@@ -377,7 +360,7 @@ reset:
       }
 
     cliip_len = sizeof(client_addr.sin6_addr.s6_addr);
-    memcpy( client_ip, &client_addr.sin6_addr.s6_addr, cliip_len); 
+    memcpy( client_ip, &client_addr.sin6_addr.s6_addr, cliip_len);
 
     /* For HelloVerifyRequest cookies */
     if( ( ret = mbedtls_ssl_set_client_transport_id( &neigh.ssl,
@@ -388,17 +371,11 @@ reset:
         goto exit;
     }
 
-    /* mbedtls_ssl_set_bio( &ssl, &client_fd, */
-    /*                      mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout ); */
-
     mbedtls_ssl_set_bio(&neigh.ssl, &neigh.client_fd,
 			net_send, net_recv, net_recv_timeout);
 
     printf( " ok\n" );
 
-    /*
-     * 5. Handshake
-     */
     printf( "  . Performing the DTLS handshake..." );
     fflush( stdout );
 
@@ -420,9 +397,6 @@ reset:
 
     printf( " ok\n" );
 
-    /*
-     * 6. Read the echo Request
-     */
     printf( "  < Read from client:" );
     fflush( stdout );
 
@@ -455,9 +429,6 @@ reset:
     len = ret;
     printf( " %d bytes read\n\n%s\n\n", len, buf );
 
-    /*
-     * 7. Write the 200 Response
-     */
     printf( "  > Write to client:" );
     fflush( stdout );
 
@@ -474,9 +445,6 @@ reset:
     len = ret;
     printf( " %d bytes written\n\n%s\n\n", len, buf );
 
-    /*
-     * 8. Done, cleanly close the connection
-     */
 close_notify:
     printf( "  . Closing the connection..." );
 
@@ -489,9 +457,6 @@ close_notify:
 
     goto reset;
 
-    /*
-     * Final clean-ups and exit
-     */
 exit:
 
 #ifdef MBEDTLS_ERROR_C
@@ -509,11 +474,7 @@ exit:
     babel_dtls_free( &dtls );
     mbedtls_net_free( &listen_fd );
 
-    /* Shell can not handle large exit numbers -> 1 for errors */
-    if( ret < 0 )
-        ret = 1;
-
-    return( ret );
+    return( ret < 0 ? 1 : 0 );
 #endif
 }
 #endif /* MBEDTLS_SSL_SRV_C && MBEDTLS_SSL_PROTO_DTLS &&
