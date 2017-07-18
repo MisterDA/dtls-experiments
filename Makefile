@@ -1,10 +1,14 @@
 CC=gcc
-CFLAGS=-g -Wall -Wextra 
+CFLAGS=-g -Wall -Wextra
+# LDFLAGS=/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedcrypto.a \
+# 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedtls.a \
+# 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedx509.a
+
 LDFLAGS=-lmbedx509 -lmbedcrypto -lmbedtls
 
 CERTS=certs
 
-all: dtls_client dtls_server
+all: dtls_client dtls_server dtls_server_mbedtls
 
 dtls_client: dtls_client.o
 	$(CC) -o $@ $^ $(LDFLAGS)
@@ -12,8 +16,11 @@ dtls_client: dtls_client.o
 dtls_server: dtls_server.o
 	$(CC) -o $@ $^ $(LDFLAGS)
 
+dtls_server_mbedtls: dtls_server_mbedtls.o
+	$(CC) -o $@ $^ $(LDFLAGS)
+
 %.o: %.c
-	$(CC) -o $@ -c $< $(CFLAGS)
+	$(CC) $(CFLAGS) -o $@ -c $<
 
 clean:
 	rm -rf *.o
