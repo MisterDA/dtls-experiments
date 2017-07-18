@@ -59,12 +59,12 @@
 static void print_buf(const unsigned char *buf, size_t len) {
   static size_t n = 0;
   size_t i;
-  printf("\n=== %zu ===\n", n++);
+  printf("=== %zu ===\n", n++);
   for (i = 0; i < len; i++)
     printf("%x", buf[i]);
   if (i < len)
     printf("%02x", buf[i]);
-  putchar('\n');
+  puts("\n\n");
 }
 
 struct neighbour {
@@ -84,6 +84,8 @@ net_recv(void *ctx, unsigned char *buf, size_t len)
   struct neighbour *n = ctx;
   int rc = min(len, n->len);
   memcpy(buf, n->buf, rc);
+  printf("RECEIVED\n");
+  print_buf(buf, rc);
   return rc;
 }
 
@@ -91,7 +93,7 @@ static int
 net_recv_timeout(void *ctx, unsigned char *buf, size_t len, uint32_t timeout)
 {
   /* XXX block? */
-  mbedtls_net_usleep(timeout * 1e3 / 2);
+  mbedtls_net_usleep(timeout * 1e3);
   return net_recv(ctx, buf, len);
 }
 
@@ -101,6 +103,7 @@ net_send(void *ctx, const unsigned char *buf, size_t len)
   struct neighbour *n = ctx;
   int rc;
   printf("SENDING %zu\n", len);
+  print_buf(buf, len);
   rc = sendto(n->fd, buf, len, 0,
 	      (const struct sockaddr *)&n->addr, sizeof(n->addr));
   return rc;
@@ -324,7 +327,7 @@ reset:
 
     /* mbedtls_ssl_session_reset( &neigh.ssl ); */
 
-    printf( "  . Waiting for a remote connection ..." );
+    printf( "  . Waiting for a remote connection ...\n" );
     fflush( stdout );
 
 
@@ -343,7 +346,7 @@ reset:
 	ret = (int) recvfrom( listen_fd.fd, buf, BUFLEN, 0,
 			      (struct sockaddr *) &client_addr, &n );
       } while ( ret == -1 && (errno == EAGAIN || errno == EWOULDBLOCK));
-      print_buf(buf, ret);
+      // print_buf(buf, ret);
 
       struct neighbour *neigh = list_get(neighbours, &client_addr);
       if (neigh) {
@@ -383,16 +386,26 @@ reset:
 	    goto exit;
 	  }
 
-	mbedtls_ssl_set_bio(&neigh->ssl, &neigh,
+	printf("ssl_set_bio\n");
+	mbedtls_ssl_set_bio(&neigh->ssl, neigh,
 			    net_send, net_recv, net_recv_timeout);
 
 	ret = mbedtls_ssl_handshake_step( &neigh->ssl );
-	if (ret) {
-	  printf( " failed\n  ! "
-		  "mbedtls_ssl_handshake_step() returned -0x%x\n\n", -ret);
-	} else if (ret == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
+	printf("%d READ: %d WRITE: %d HVR: %d\n", ret,
+	       MBEDTLS_ERR_SSL_WANT_READ,	
+	       MBEDTLS_ERR_SSL_WANT_WRITE,
+	       MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED);
+	ret = mbedtls_ssl_handshake_step( &neigh->ssl );
+	printf("%d READ: %d WRITE: %d HVR: %d\n", ret,
+	       MBEDTLS_ERR_SSL_WANT_READ,	
+	       MBEDTLS_ERR_SSL_WANT_WRITE,
+	       MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED);
+	if (ret == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
 	  printf( " hello verification requested\n" );
 	  mbedtls_ssl_session_reset( &neigh->ssl );
+	} else if (ret) {
+	  printf( " failed\n  ! "
+		  "mbedtls_ssl_handshake_step() returned -0x%x\n\n", -ret);
 	}
       }
 
