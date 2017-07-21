@@ -283,6 +283,12 @@ neighbour_init(struct neighbour *neigh, struct babel_dtls *dtls,
   return rc;
 }
 
+static void
+neighbour_free(struct neighbour *n)
+{
+  mbedtls_ssl_free(&n->ssl);
+}
+
 static struct neighbour *
 list_get(struct neighbour *n, struct sockaddr_in6 *addr)
 {
@@ -293,6 +299,22 @@ list_get(struct neighbour *n, struct sockaddr_in6 *addr)
   }
   return NULL;
 }
+
+static void
+list_rm(struct neighbour *head, struct neighbour *neigh)
+{
+  struct neighbour **n = &head;
+  while (n) {
+    struct neighbour *m = *n;
+    if (memcmp(&m->addr, &neigh->addr, sizeof(neigh->addr)) == 0) {
+      *n = m->next;
+      neighbour_free(m);
+      break;
+    }
+    n = &m->next;
+  }
+}
+
 
 static int
 net_bind(int *fd)
@@ -369,6 +391,10 @@ int main(void)
 
     rc = recvfrom(listen_fd, buf, BUFLEN, 0,
   		  (struct sockaddr *) &client_addr, &n);
+    if(rc <= 0) {
+      perror("recvfrom");
+      continue;
+    }
 
     neighbour = list_get(neighbours, &client_addr);
     if (neighbour) {
@@ -389,6 +415,7 @@ int main(void)
       neighbour->next = neighbours;
       neighbours = neighbour;
 
+      mbedtls_ssl_session_reset(&neighbour->ssl);
       rc = mbedtls_ssl_set_client_transport_id(&neighbour->ssl,
 					       client_addr.sin6_addr.s6_addr,
 					       sizeof(client_addr.sin6_addr.s6_addr));
@@ -404,6 +431,7 @@ int main(void)
       if(rc == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
 	printf("hello verification required\n");
 	mbedtls_ssl_session_reset(&neighbour->ssl);
+	list_rm(neighbours, neighbour);
       } else if (rc) {
 	printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
 	print_mbedtls_err(-rc);
@@ -413,7 +441,7 @@ int main(void)
 
   while (neighbours) {
     struct neighbour *n = neighbours->next;
-    mbedtls_ssl_free( &n->ssl );
+    neighbour_free(n);
     free(neighbours);
     neighbours = n;
   }
