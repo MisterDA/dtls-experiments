@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-g -Wall -Wextra
+CFLAGS=-g -Wall -Wextra -DMBEDTLS_ERROR_C -DMBEDTLS_DEBUG_C
 # LDFLAGS=/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedcrypto.a \
 # 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedtls.a \
 # 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedx509.a

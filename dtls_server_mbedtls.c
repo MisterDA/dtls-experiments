@@ -89,6 +89,41 @@ static void my_debug( void *ctx, int level,
     fflush(  (FILE *) ctx  );
 }
 
+static void print_buf(const unsigned char *buf, size_t len) {
+  static size_t n = 0;
+  size_t i;
+  printf("\n=== %zu ===\n", n++);
+  for (i = 0; i < len; i++)
+    printf("%x", buf[i]);
+  if (i < len)
+    printf("%02x", buf[i]);
+  putchar('\n');
+}
+
+static int
+net_recv(void *ctx, unsigned char *buf, size_t len)
+{
+  int rv = mbedtls_net_recv(ctx, buf, len);
+  // print_buf(buf, rv);
+  return rv;
+}
+
+static int
+net_recv_timeout(void *ctx, unsigned char *buf, size_t len, uint32_t timeout)
+{
+  int rv = mbedtls_net_recv_timeout(ctx, buf, len, timeout);
+  // print_buf(buf, rv);
+  return rv;
+}
+
+static int
+net_send(void *ctx, const unsigned char *buf, size_t len)
+{
+  int rv = mbedtls_net_send(ctx, buf, len);
+  // print_buf(buf, rv);
+  return rv;
+}
+
 int main( void )
 {
     int ret, len;
@@ -283,7 +318,7 @@ reset:
     }
 
     mbedtls_ssl_set_bio( &ssl, &client_fd,
-                         mbedtls_net_send, mbedtls_net_recv, mbedtls_net_recv_timeout );
+                         net_send, net_recv, net_recv_timeout );
 
     printf( " ok\n" );
 
