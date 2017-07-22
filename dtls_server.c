@@ -13,7 +13,7 @@
 #define mbedtls_time_t     time_t
 #endif
 
-#if !defined(MBEDTLS_SSL_SRV_C) || !defined(MBEDTLS_SSL_PROTO_DTLS) ||	\
+#if !defined(MBEDTLS_SSL_SRV_C) || !defined(MBEDTLS_SSL_PROTO_DTLS) ||  \
   !defined(MBEDTLS_SSL_COOKIE_C) || !defined(MBEDTLS_NET_C) ||          \
   !defined(MBEDTLS_ENTROPY_C) || !defined(MBEDTLS_CTR_DRBG_C) ||        \
   !defined(MBEDTLS_X509_CRT_PARSE_C) || !defined(MBEDTLS_RSA_C) ||      \
@@ -60,20 +60,20 @@
 #define BUFLEN 4096
 
 #ifdef MBEDTLS_ERROR_C
-#define print_mbedtls_err(rc)					\
-if(rc) {							\
-  char error_buf[100];						\
-  mbedtls_strerror(rc, error_buf, 100);				\
-  printf("Last error was: -%#x - %s\n\n", rc, error_buf);	\
-}
+#define print_mbedtls_err(rc)                               \
+  if(rc) {                                                  \
+    char error_buf[100];                                    \
+    mbedtls_strerror(rc, error_buf, 100);                   \
+    printf("Last error was: -%#x - %s\n\n", rc, error_buf); \
+  }
 #else
 #define print_mbedtls_err(rc)
 #endif
 
 static void
 my_debug(void *ctx,int level,
-	 const char *file, int line,
-	 const char *str)
+         const char *file, int line,
+         const char *str)
 {
   ((void) level);
 
@@ -130,7 +130,7 @@ net_send(void *ctx, const unsigned char *buf, size_t len)
   printf("SENDING %zu\n", len);
   print_buf(buf, len);
   rc = sendto(n->fd, buf, len, 0,
-	      (const struct sockaddr *)&n->addr, sizeof(n->addr));
+              (const struct sockaddr *)&n->addr, sizeof(n->addr));
   return rc;
 }
 
@@ -171,41 +171,42 @@ babel_dtls_init(struct babel_dtls *dtls)
 #endif
 
   rc = mbedtls_x509_crt_parse(&dtls->srvcert,
-			      (const unsigned char *) mbedtls_test_srv_crt,
-			      mbedtls_test_srv_crt_len );
+                              (const unsigned char *) mbedtls_test_srv_crt,
+                              mbedtls_test_srv_crt_len );
   if(rc) {
     printf("failed ! mbedtls_x509_crt_parse returned %d\n\n", rc);
     goto exit;
   }
 
   rc = mbedtls_x509_crt_parse(&dtls->srvcert,
-			       (const unsigned char *) mbedtls_test_cas_pem,
-			       mbedtls_test_cas_pem_len);
+                              (const unsigned char *) mbedtls_test_cas_pem,
+                              mbedtls_test_cas_pem_len);
   if(rc) {
     printf("failed ! mbedtls_x509_crt_parse returned %d\n\n", rc);
     goto exit;
   }
 
   rc = mbedtls_pk_parse_key(&dtls->pkey,
-			    (const unsigned char *) mbedtls_test_srv_key,
-			    mbedtls_test_srv_key_len,
-			    NULL, 0);
+                            (const unsigned char *) mbedtls_test_srv_key,
+                            mbedtls_test_srv_key_len,
+                            NULL, 0);
   if(rc) {
     printf("failed ! mbedtls_pk_parse_key returned %d\n\n", rc);
     goto exit;
   }
 
-  rc = mbedtls_ctr_drbg_seed(&dtls->ctr_drbg, mbedtls_entropy_func, &dtls->entropy,
-			     pers, sizeof(pers));
+  rc = mbedtls_ctr_drbg_seed(&dtls->ctr_drbg, mbedtls_entropy_func,
+                             &dtls->entropy,
+                             pers, sizeof(pers));
   if(rc) {
     printf("failed ! mbedtls_ctr_drbg_seed returned %d\n\n", rc);
     goto exit;
   }
 
   rc = mbedtls_ssl_config_defaults(&dtls->conf,
-				   MBEDTLS_SSL_IS_SERVER,
-				   MBEDTLS_SSL_TRANSPORT_DATAGRAM,
-				   MBEDTLS_SSL_PRESET_DEFAULT);
+                                   MBEDTLS_SSL_IS_SERVER,
+                                   MBEDTLS_SSL_TRANSPORT_DATAGRAM,
+                                   MBEDTLS_SSL_PRESET_DEFAULT);
   if(rc) {
     mbedtls_printf("failed ! mbedtls_ssl_config_defaults returned %d\n\n", rc);
     goto exit;
@@ -217,8 +218,8 @@ babel_dtls_init(struct babel_dtls *dtls)
 
 #if defined(MBEDTLS_SSL_CACHE_C)
   mbedtls_ssl_conf_session_cache(&dtls->conf, &dtls->cache,
-				 mbedtls_ssl_cache_get,
-				 mbedtls_ssl_cache_set);
+                                 mbedtls_ssl_cache_get,
+                                 mbedtls_ssl_cache_set);
 #endif
 
   mbedtls_ssl_conf_ca_chain(&dtls->conf, dtls->srvcert.next, NULL);
@@ -229,15 +230,15 @@ babel_dtls_init(struct babel_dtls *dtls)
   }
 
   rc = mbedtls_ssl_cookie_setup(&dtls->cookie_ctx,
-				mbedtls_ctr_drbg_random, &dtls->ctr_drbg);
+                                mbedtls_ctr_drbg_random, &dtls->ctr_drbg);
   if(rc) {
     printf("failed ! mbedtls_ssl_cookie_setup returned %d\n\n", rc);
     goto exit;
   }
 
   mbedtls_ssl_conf_dtls_cookies(&dtls->conf, mbedtls_ssl_cookie_write,
-				mbedtls_ssl_cookie_check,
-				&dtls->cookie_ctx);
+                                mbedtls_ssl_cookie_check,
+                                &dtls->cookie_ctx);
 
  exit:
   return rc;
@@ -260,7 +261,7 @@ babel_dtls_free(struct babel_dtls *dtls)
 
 static int
 neighbour_init(struct neighbour *neigh, struct babel_dtls *dtls,
-	       struct sockaddr_in6 *addr, int fd)
+               struct sockaddr_in6 *addr, int fd)
 {
   int rc;
 
@@ -273,8 +274,8 @@ neighbour_init(struct neighbour *neigh, struct babel_dtls *dtls,
   }
 
   mbedtls_ssl_set_timer_cb(&neigh->ssl, &dtls->timer,
-			   mbedtls_timing_set_delay,
-			   mbedtls_timing_get_delay);
+                           mbedtls_timing_set_delay,
+                           mbedtls_timing_get_delay);
 
   memcpy(&neigh->addr, addr, sizeof(*addr));
   neigh->fd = fd;
@@ -301,20 +302,21 @@ list_get(struct neighbour *n, struct sockaddr_in6 *addr)
 }
 
 static void
-list_rm(struct neighbour *head, struct neighbour *neigh)
+list_rm(struct neighbour **head, struct neighbour *neigh)
 {
-  struct neighbour **n = &head;
-  while (n) {
-    struct neighbour *m = *n;
-    if (memcmp(&m->addr, &neigh->addr, sizeof(neigh->addr)) == 0) {
-      *n = m->next;
-      neighbour_free(m);
+  struct neighbour **pp = head;
+  struct neighbour *entry = *head;
+
+  while (entry) {
+    if (memcmp(&entry->addr, &neigh->addr, sizeof(neigh->addr)) == 0) {
+      *pp = entry->next;
+      neighbour_free(entry);
       break;
     }
-    n = &m->next;
+    pp = &entry->next;
+    entry = entry->next;
   }
 }
-
 
 static int
 net_bind(int *fd)
@@ -333,14 +335,14 @@ net_bind(int *fd)
 
   rc = -1;
   for(cur = addr_list; cur != NULL; cur = cur->ai_next) {
-    *fd = (int) socket( cur->ai_family, cur->ai_socktype,
-			cur->ai_protocol );
+    *fd = (int) socket(cur->ai_family, cur->ai_socktype,
+                       cur->ai_protocol);
     if(*fd < 0)
       continue;
 
     n = 1;
     if(setsockopt(*fd, SOL_SOCKET, SO_REUSEADDR,
-		  (const char *) &n, sizeof(n)) != 0) {
+                  (const char *) &n, sizeof(n)) != 0) {
       close(*fd);
       rc = -1;
       continue;
@@ -390,7 +392,7 @@ int main(void)
     socklen_t n = sizeof(client_addr);
 
     rc = recvfrom(listen_fd, buf, BUFLEN, 0,
-  		  (struct sockaddr *) &client_addr, &n);
+                  (struct sockaddr *) &client_addr, &n);
     if(rc <= 0) {
       perror("recvfrom");
       continue;
@@ -402,8 +404,8 @@ int main(void)
       neighbour->len = rc;
       rc = mbedtls_ssl_handshake(&neighbour->ssl);
       if(rc) {
-	printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
-	print_mbedtls_err(-rc);
+        printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
+        print_mbedtls_err(-rc);
       }
     } else {
       printf("New neighbour.\n");
@@ -417,24 +419,25 @@ int main(void)
 
       mbedtls_ssl_session_reset(&neighbour->ssl);
       rc = mbedtls_ssl_set_client_transport_id(&neighbour->ssl,
-					       client_addr.sin6_addr.s6_addr,
-					       sizeof(client_addr.sin6_addr.s6_addr));
+                                               client_addr.sin6_addr.s6_addr,
+                                               sizeof(client_addr.sin6_addr.s6_addr));
       if(rc) {
-	printf("failed ! mbedtls_ssl_set_client_transport_id() returned -0x%x\n\n", -rc);
-	print_mbedtls_err(rc);
+        printf("failed ! mbedtls_ssl_set_client_transport_id() returned -0x%x\n\n", -rc);
+        print_mbedtls_err(rc);
       }
 
       mbedtls_ssl_set_bio(&neighbour->ssl, neighbour,
-			  net_send, net_recv, net_recv_timeout);
+                          net_send, net_recv, net_recv_timeout);
 
       rc = mbedtls_ssl_handshake(&neighbour->ssl);
       if(rc == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
-	printf("hello verification required\n");
-	mbedtls_ssl_session_reset(&neighbour->ssl);
-	list_rm(neighbours, neighbour);
+        printf("hello verification required\n");
+        mbedtls_ssl_session_reset(&neighbour->ssl);
+        list_rm(&neighbours, neighbour);
+	free(neighbour);
       } else if (rc) {
-	printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
-	print_mbedtls_err(-rc);
+        printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
+        print_mbedtls_err(-rc);
       }
     }
   }
