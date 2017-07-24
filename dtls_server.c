@@ -101,6 +101,7 @@ struct neighbour {
   mbedtls_ssl_context ssl;
 
   int fd;
+  bool has_read;
   const unsigned char *buf;
   size_t len;
 };
@@ -109,8 +110,14 @@ static int
 net_recv(void *ctx, unsigned char *buf, size_t len)
 {
   struct neighbour *n = ctx;
+  if (n->has_read) {
+    errno = EAGAIN;
+    return MBEDTLS_ERR_SSL_WANT_READ;
+  }
+
   int rc = min(len, n->len);
   memcpy(buf, n->buf, rc);
+  n->has_read = true;
   printf("RECEIVED %d\n", rc);
   print_buf(buf, rc);
   return rc;
@@ -119,6 +126,31 @@ net_recv(void *ctx, unsigned char *buf, size_t len)
 static int
 net_recv_timeout(void *ctx, unsigned char *buf, size_t len, uint32_t timeout)
 {
+#if 0
+  int rc;
+  struct timeval tv;
+  fd_set read_fds;
+  int fd = ((struct neighbour *) ctx)->fd;
+
+  FD_ZERO(&read_fds);
+  FD_SET(fd, &read_fds);
+
+  tv.tv_sec  = timeout / 1000;
+  tv.tv_usec = (timeout % 1000) * 1000;
+
+  rc = select(fd + 1, &read_fds, NULL, NULL, timeout == 0 ? NULL : &tv);
+
+  /* Zero fds ready means we timed out */
+  if(rc == 0)
+    return MBEDTLS_ERR_SSL_TIMEOUT;
+
+  if(rc < 0) {
+    if(errno == EINTR)
+      return(MBEDTLS_ERR_SSL_WANT_READ);
+    return(MBEDTLS_ERR_NET_RECV_FAILED);
+  }
+
+#endif
   return net_recv(ctx, buf, len);
 }
 
@@ -264,6 +296,7 @@ neighbour_init(struct neighbour *neigh, struct babel_dtls *dtls,
                struct sockaddr_in6 *addr, int fd)
 {
   int rc;
+  memset(neigh, 0, sizeof(*neigh));
 
   mbedtls_ssl_init(&neigh->ssl);
 
@@ -279,6 +312,20 @@ neighbour_init(struct neighbour *neigh, struct babel_dtls *dtls,
 
   memcpy(&neigh->addr, addr, sizeof(*addr));
   neigh->fd = fd;
+
+  neigh->next = NULL;
+
+  rc = mbedtls_ssl_set_client_transport_id(&neigh->ssl,
+					   addr->sin6_addr.s6_addr,
+					   sizeof(addr->sin6_addr.s6_addr));
+  if(rc) {
+    printf("failed ! mbedtls_ssl_set_client_transport_id() "
+	   "returned -0x%x\n\n", -rc);
+    print_mbedtls_err(rc);
+  }
+
+  mbedtls_ssl_set_bio(&neigh->ssl, neigh,
+		      net_send, net_recv, net_recv_timeout);
 
  exit:
   return rc;
@@ -399,47 +446,65 @@ int main(void)
     }
 
     neighbour = list_get(neighbours, &client_addr);
-    if (neighbour) {
-      printf("Neighbour found.\n");
-      neighbour->len = rc;
-      rc = mbedtls_ssl_handshake(&neighbour->ssl);
-      if(rc) {
-        printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
-        print_mbedtls_err(-rc);
-      }
-    } else {
+    if(!neighbour) {
       printf("New neighbour.\n");
       neighbour = malloc(sizeof(*neighbour));
       neighbour_init(neighbour, &dtls, &client_addr, listen_fd);
       neighbour->buf = buf;
-      neighbour->len = rc;
 
       neighbour->next = neighbours;
       neighbours = neighbour;
+    }
+    neighbour->len = rc;
+    neighbour->has_read = false;
 
-      mbedtls_ssl_session_reset(&neighbour->ssl);
-      rc = mbedtls_ssl_set_client_transport_id(&neighbour->ssl,
-                                               client_addr.sin6_addr.s6_addr,
-                                               sizeof(client_addr.sin6_addr.s6_addr));
-      if(rc) {
-        printf("failed ! mbedtls_ssl_set_client_transport_id() returned -0x%x\n\n", -rc);
-        print_mbedtls_err(rc);
-      }
-
-      mbedtls_ssl_set_bio(&neighbour->ssl, neighbour,
-                          net_send, net_recv, net_recv_timeout);
-
+    if (neighbour->ssl.state != MBEDTLS_SSL_HANDSHAKE_OVER) {
       rc = mbedtls_ssl_handshake(&neighbour->ssl);
       if(rc == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
         printf("hello verification required\n");
-        mbedtls_ssl_session_reset(&neighbour->ssl);
-        list_rm(&neighbours, neighbour);
-	free(neighbour);
+	goto reset;
       } else if (rc) {
         printf("failed ! mbedtls_ssl_handshake() returned -%#x\n\n", -rc);
         print_mbedtls_err(-rc);
+	// goto reset;
+      }
+      continue;
+    }
+
+    rc = mbedtls_ssl_read(&neighbour->ssl, buf, neighbour->len);
+    if(rc <= 0) {
+      switch(rc) {
+      case MBEDTLS_ERR_SSL_TIMEOUT:
+	printf(" timeout\n\n");
+	goto reset;
+      case MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY:
+	printf(" connection was closed gracefully\n");
+	rc = 0;
+        goto close_notify;
+      default:
+	printf(" mbedtls_ssl_read returned -%#x\n\n", -rc);
+	goto reset;
       }
     }
+
+    puts((const char *) buf);
+
+
+    printf("  > Write to client:");
+    fflush(stdout);
+    rc = mbedtls_ssl_write(&neighbour->ssl, buf, rc);
+    if(rc < 0) {
+      printf(" failed\n  ! mbedtls_ssl_write returned %d\n\n", rc);
+      goto reset;
+    }
+
+  close_notify:
+    printf( "  . Closing the connection..." );
+    rc = mbedtls_ssl_close_notify(&neighbour->ssl);
+
+  reset:
+    list_rm(&neighbours, neighbour);
+    free(neighbour);
   }
 
   while (neighbours) {
