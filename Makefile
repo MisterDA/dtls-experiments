@@ -1,10 +1,8 @@
 CC=gcc
-CFLAGS=-g -Wall -Wextra -DMBEDTLS_ERROR_C -DMBEDTLS_DEBUG_C
-# LDFLAGS=/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedcrypto.a \
-# 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedtls.a \
-# 	/home/antonin/mbedtls/pkg/mbedtls/usr/lib/libmbedx509.a
-
-LDFLAGS=-lmbedx509 -lmbedcrypto -lmbedtls
+CFLAGS=-g -Wall -Wextra -DMBEDTLS_ERROR_C -DMBEDTLS_DEBUG_C \
+       -I/usr/local/include
+LDFLAGS=-lmbedx509 -lmbedcrypto -lmbedtls \
+        -L/usr/local/lib
 
 CERTS=certs
 
